@@ -12,6 +12,7 @@ import Data.Maybe
 import Data.List
 import Data.List.Split
 import Data.Aeson as DA (encode, eitherDecode)
+import Text.Read
 import qualified Data.ByteString.Lazy as B
 import System.Environment
 import System.Exit
@@ -171,7 +172,121 @@ doStop tvm args = do
         _ -> error "usage: tvm stop <name>"
 
 doAdd tvm name args = undefined
-doSet tvm name args = undefined
+
+doSetQemu cfg ["qemuArch"] value = do
+    let newArch = readEither value :: Either String QemuArch
+    case newArch of
+        Right arch -> Just $ cfg { qemuArch = arch }
+        Left _ -> Nothing
+doSetQemu cfg ["qemuMemory"] value = do
+    let newMem = readEither value :: Either String Int
+    case newMem of
+        Right mem -> Just $ cfg { qemuMemory = mem }
+        Left _ -> Nothing
+doSetQemu cfg ["qemuCPUs"] value = do
+    let newCPUs = readEither value :: Either String Int
+    case newCPUs of
+        Right cpus -> Just $ cfg { qemuCPUs = cpus }
+        Left _ -> Nothing
+doSetQemu cfg ["qemuBoot"] value = do
+    let newBoot = readEither value :: Either String BootOrder
+    case newBoot of
+        Right boot -> Just $ cfg { qemuBoot = boot }
+        Left _ -> Nothing
+doSetQemu cfg ("qemuDrives":index:xs) value = do
+    let tuple = splitAt (read index) $ qemuDrives cfg
+    Just $ cfg { qemuDrives = (fst tuple) ++ [doSetQemuDrive (head $ snd tuple) xs value] ++ (tail $ snd tuple) }
+    where doSetQemuDrive driveCfg ["diskFile"]      value = driveCfg { diskFile = value }
+          doSetQemuDrive driveCfg ["diskInterface"] value = do
+              let newDiskInterface = readEither value :: Either String (Maybe DiskInterface)
+              case newDiskInterface of
+                  Right diskInt -> driveCfg { diskInterface = diskInt }
+                  Left  _       -> driveCfg
+          doSetQemuDrive driveCfg ["diskMedia"]     value = do
+              let newDiskMedia = readEither value :: Either String DiskMedia
+              case newDiskMedia of
+                  Right diskMed -> driveCfg { diskMedia = diskMed }
+                  Left  _       -> driveCfg
+          doSetQemuDrive driveCfg list              _     = driveCfg -- TODO and show an error
+doSetQemu cfg ("qemuNics":index:xs) value = do
+    let tuple = splitAt (read index) $ qemuNics cfg
+    Just $ cfg { qemuNics = (fst tuple) ++ [doSetQemuNic (head $ snd tuple) xs value] ++ (tail $ snd tuple) }
+    where doSetQemuNic nicCfg ["nicModel"]      value = do
+              let newNicModel = readEither value :: Either String (Maybe String)
+              case newNicModel of
+                  Right nicMod -> nicCfg { nicModel = nicMod }
+                  Left  _      -> nicCfg
+          doSetQemuNic nicCfg ["nicMacAddr"]      value = do
+              let newNicMacAddr = readEither value :: Either String (Maybe String)
+              case newNicMacAddr of
+                  Right macAddr -> nicCfg { nicMacAddr = macAddr }
+                  Left  _       -> nicCfg
+          doSetQemuNic nicCfg ["nicVLAN"]      value = do
+              let newNicVLAN = readEither value :: Either String (Maybe Int)
+              case newNicVLAN of
+                  Right vlan -> nicCfg { nicVLAN = vlan }
+                  Left  _    -> nicCfg
+          doSetQemuNic nicCfg list              _     = nicCfg -- TODO and show an error
+doSetQemu cfg ("qemuNets":index:xs) value = do
+    let tuple = splitAt (read index) $ qemuNets cfg
+    Just $ cfg { qemuNets = (fst tuple) ++ [doSetQemuNet (head $ snd tuple) xs value] ++ (tail $ snd tuple) }
+    where doSetQemuNet netCfg ("userNetHostFWD":i:xs) value = do
+              let tuple' = splitAt (read i) $ userNetHostFWD netCfg
+              netCfg { userNetHostFWD = (fst tuple') ++ [doSetQemuNetFWD (head $ snd tuple') xs value] ++ (tail $ snd tuple') }
+          doSetQemuNet netCfg list                  _     = netCfg -- TODO and show an error
+
+          doSetQemuNetFWD hostFwdCfg ["hostFWDFamily"] value = do
+              let newFwdFamily = readEither value :: Either String (Maybe NetFamily)
+              case newFwdFamily of
+                  Right fwdFamily -> hostFwdCfg { hostFWDFamily = fwdFamily }
+                  Left  _         -> hostFwdCfg
+          doSetQemuNetFWD hostFwdCfg ["hostFWDHostAddr"] value = do
+              let newFwdHostAddr = readEither value :: Either String (Maybe String)
+              case newFwdHostAddr of
+                  Right hostAddr -> hostFwdCfg { hostFWDHostAddr = hostAddr }
+                  Left  _        -> hostFwdCfg
+          doSetQemuNetFWD hostFwdCfg ["hostFWDHostPort"] value = do
+              let newFwdHostPort = readEither value :: Either String Int
+              case newFwdHostPort of
+                  Right hostPort -> hostFwdCfg { hostFWDHostPort = hostPort }
+                  Left  _        -> hostFwdCfg
+          doSetQemuNetFWD hostFwdCfg ["hostFWDGuestAddr"] value = do
+              let newFwdGuestAddr = readEither value :: Either String (Maybe String)
+              case newFwdGuestAddr of
+                  Right guestAddr -> hostFwdCfg { hostFWDGuestAddr = guestAddr }
+                  Left  _         -> hostFwdCfg
+          doSetQemuNetFWD hostFwdCfg ["hostFWDGuestPort"] value = do
+              let newFwdGuestPort = readEither value :: Either String Int
+              case newFwdGuestPort of
+                  Right guestPort -> hostFwdCfg { hostFWDGuestPort = guestPort }
+                  Left  _         -> hostFwdCfg
+          doSetQemuNetFWD hostFwdCfg _                 _     = hostFwdCfg -- TODO show an error?
+doSetQemu cfg ["qemuSerials",index] value  = do
+    let tuple = splitAt (read index) $ qemuSerials cfg
+    Just $ cfg { qemuSerials = (fst tuple) ++ [SerialPipe value] ++ (tail $ snd tuple) }
+doSetQemu cfg ["qemuVGA"] value = do
+    let newVGA = readEither value :: Either String VGA
+    case newVGA of
+        Right vga -> Just $ cfg { qemuVGA = vga }
+        Left _ -> Nothing
+-- Should we handle bad value as Nothing or should we expect user to give us
+-- Maybe Int ?
+doSetQemu cfg ["qemuVNC"] value = do
+    let newVNC = readEither value :: Either String (Maybe Int)
+    case newVNC of
+        Right vnc -> Just $ cfg { qemuVNC = vnc }
+        Left _ -> Nothing
+doSetQemu cfg _ _ = Nothing
+
+doSet tvm name args =
+    case args of
+        [field,value] -> withCfg tvm name $ \cfg -> do
+                             let splittedList = splitOn "." field
+                             let config = doSetQemu cfg splittedList value
+                             case config of
+                                 Just newConfig -> writeCfg tvm name newConfig
+			    _ -> error "Not supported..."
+	_ -> error $ "usage: tvm get <name> <field>"
 
 doGetQemu cfg ["qemuArch"]            = show $ qemuArch cfg
 doGetQemu cfg ["qemuMemory"]          = show $ qemuMemory cfg
